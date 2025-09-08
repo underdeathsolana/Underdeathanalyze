@@ -2,8 +2,20 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import requests
 from fallback import is_suspected_pumpfun_or_moonshot, search_gecko_terminal
+from fallback import get_token_data_birdeye, get_token_data_gecko
 
 CHANNEL_ID = "@underdeathpump"
+
+
+def analyze_token(address, chain='solana'):
+    try:
+        result = get_token_data_gecko(address)
+        if not result:
+            print("⚠️ Fallback to Birdeye...")
+            result = get_token_data_birdeye(address, chain=chain)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
 
 def honeypot_check(ca, chain):
     if chain.lower() not in ["eth", "bsc", "base"]:
@@ -19,6 +31,7 @@ def honeypot_check(ca, chain):
         return f"🚨 Honeypot! (Buy Tax: {tax}%)" if is_honey else f"✅ Aman (Buy Tax: {tax}%)"
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
+
 
 async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ca = update.message.text.strip()
@@ -70,23 +83,30 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📍 CA: `{ca}`"""
 
-    keyboard = [[InlineKeyboardButton("🔗 DexScreener", url=dex_url)]]
+    keyboard = [
+        [InlineKeyboardButton("🔗 DexScreener", url=dex_url)]
+    ]
 
     if chain == "solana":
-        keyboard += [
+        keyboard.extend([
             [InlineKeyboardButton("💱 Raydium", url=f"https://raydium.io/swap/?inputCurrency=sol&outputCurrency={ca}")],
+            [InlineKeyboardButton("📊 GMGN Chart", url=f"https://gmgn.ai/solana/{ca}")],
             [InlineKeyboardButton("🤖 Maestro", url=f"https://t.me/maestro?start=r-undrdth-{ca}")],
             [InlineKeyboardButton("🛡️ Trojan", url=f"https://t.me/solana_trojanbot?start=r-undrdth-{ca}")],
-            [InlineKeyboardButton("⚔️ GMGN", url=f"https://t.me/gmgnaibot?start=r-i_5RkcycHD-{ca}")],
+            [InlineKeyboardButton("⚔️ GMGN Bot", url=f"https://t.me/gmgnaibot?start=r-i_5RkcycHD-{ca}")],
             [InlineKeyboardButton("🧾 SolScan", url=f"https://solscan.io/token/{ca}")]
-        ]
+        ])
     else:
         explorer = {
             "bsc": "bscscan.com",
             "eth": "etherscan.io",
             "base": "basescan.org"
         }.get(chain, "etherscan.io")
-        keyboard.append([InlineKeyboardButton("🧾 Explorer", url=f"https://{explorer}/token/{ca}")])
+        keyboard.extend([
+            [InlineKeyboardButton("🧾 Explorer", url=f"https://{explorer}/token/{ca}")],
+            [InlineKeyboardButton("📊 GMGN Chart", url=f"https://gmgn.ai/{chain}/{ca}")],
+            [InlineKeyboardButton("⚔️ GMGN Bot", url=f"https://t.me/gmgnaibot?start=r-i_5RkcycHD-{ca}")]
+        ])
 
     keyboard.append([InlineKeyboardButton("🐦 Creator: @Lilfid12", url="https://x.com/LilFID12")])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -94,15 +114,26 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
     await context.bot.send_message(chat_id=CHANNEL_ID, text=msg, parse_mode="Markdown", reply_markup=reply_markup)
 
-async def get_trending_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_trending_tokens(
+        update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.callback_query.edit_message_text("⏳ Mengambil data trending token Solana...")
-        res = requests.get("https://api.dexscreener.com/latest/dex/pairs/solana")
+        res = requests.get(
+            "https://api.dexscreener.com/latest/dex/pairs/solana")
         if res.status_code != 200:
             await update.callback_query.edit_message_text("⚠️ Gagal mengambil data.")
             return
         data = res.json().get("pairs", [])
-        top_tokens = sorted(data, key=lambda x: float(x.get("volume", {}).get("h24", 0)), reverse=True)[:5]
+        top_tokens = sorted(
+            data,
+            key=lambda x: float(
+                x.get(
+                    "volume",
+                    {}).get(
+                    "h24",
+                    0)),
+            reverse=True)[
+            :5]
 
         msg = "*🔥 Trending Token Solana (Top 5 by 24h Volume)*\n"
         for i, t in enumerate(top_tokens, 1):
